@@ -1,185 +1,297 @@
 import streamlit as st
+import requests
+import config, json
+from helpers import formatNumber
+from datetime import datetime, timedelta
+from FMP import FMP
+import certifi
+import json
+from urllib.request import urlopen
 import pandas as pd
-import numpy as np
 import yfinance as yf
-import pickle
-import matplotlib.pyplot as plt
 import streamlit as st
-import plotly
-import plotly.express as px
-import time
-import datetime
-from datetime import datetime
+import datetime as dt
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import numpy as np
 
-def dateToQTR(x):
-    """
-    dateToQTR - converts date to quarter.
-    :param x: date given
-    :return: quarter
-    """
-    QTR=(x.month-1)//3+1
-    QTR="Q"+str(QTR)
-    return QTR
+#
+symbol = st.sidebar.text_input('Symbol', value='MSFT')
+symbol = symbol.upper()
+stock = FMP(config.FMP_TOKEN, symbol)
+screen = st.sidebar.selectbox('View', ('Summary', 'Ticker', 'DCF Valuation', 'Relative Valuations', 'Profitability', 'Solvency'), index=1)
 
-def dateToYear(x):
-    """
-    dateToYear - converts date to year.
-    :param x: date given
-    :return: year
-    """
-    return x.year
+#
+def get_jsonparsed_data(url):
+    response = urlopen(url, cafile=certifi.where())
+    data = response.read().decode("utf-8")
+    return json.loads(data)
 
-@st.cache
-def DCF(earnings, discount_rate, growth_rate1, growth_years ,growth_rate2, total_years):
-    """
-    DCF -
-    :param earnings:
-    :param discount_rate:
-    :param growth_rate1:
-    :param growth_years:
-    :param growth_rate2:
-    :param total_years:
-    :return:
-    """
-    value = 0
-    last_Earnings = earnings
-    
-    if growth_years == 0:
-        if discount_rate <= growth_rate1:
-            value = np.inf
+#
+st.title(screen)
+
+#--------------------------------------Section 1: Summary-----------------------------------------#
+if screen == 'Summary':
+
+    print('Getting DCF valuation from FMP api.')
+    DCF = stock.get_DCF()
+    DCF = get_jsonparsed_data(DCF)
+    discountedCashFlow = DCF['dcf']
+    discountedCashFlow = round(discountedCashFlow, 2)
+
+    print('Getting company information from FMP api.')
+    companyProfile = stock.get_company_profile()
+    companyProfile = get_jsonparsed_data(companyProfile)
+    companyProfile = companyProfile[0]
+
+    companyName = companyProfile['companyName']
+    stockSymbol = companyProfile['symbol']
+    price = companyProfile['price']
+    price = round(price, 2)
+    exchange = companyProfile['exchangeShortName']
+    industry = companyProfile['industry']
+    description = companyProfile['description']
+    sector = companyProfile['sector']
+    currency = companyProfile['currency']
+    image = companyProfile['image']
+
+    col1, col2 = st.columns([1, 4])
+
+    with col1:
+        st.image(image)
+
+    with col2:
+        st.subheader(f'{companyName} ({exchange}: {stockSymbol})')
+        st.subheader(f'{price} {currency}')
+        st.write(f'Industry: {industry}')
+        st.write(f'Sector: {sector}')
+        #st.write(description)
+
+    st.subheader('Intrinsic Value')
+    #comparison: 2 bard (intrinsic value vs price)
+
+    #put relative valuations into consideration, make average and compare it to the price!!!!!!
+    if discountedCashFlow > price:
+        valuation = 'undervalued'
+
+    elif price > discountedCashFlow:
+        valuation = 'overvalued'
+
+    percentage = ((discountedCashFlow - price)/price) * 100
+    percentage = abs(percentage)
+    percentage = round(percentage, 2)
+
+    #change text color by overvalued vs undervalued.
+    st.write(f'The intrinsic value of one {stockSymbol} stock under our scenario is {discountedCashFlow} {currency}.')
+    st.write(f'Compared to the current marker price of {price} {currency}, {companyName} is {valuation} by {percentage}%')
+
+#--------------------------------Section 2: Ticker-----------------------------------------------
+if screen == 'Ticker':
+    snp500 = pd.read_csv("SP500.csv")
+    symbols = snp500['Symbol'].sort_values().tolist()
+
+    ticker = st.sidebar.selectbox(
+        'Choose a S&P 500 Stock',
+        symbols)
+
+    i = st.sidebar.selectbox(
+        "Interval in minutes",
+        ("1m", "5m", "15m", "30m")
+    )
+
+    p = st.sidebar.number_input("How many days (1-30)", min_value=1, max_value=30, step=1)
+
+    stock = yf.Ticker(ticker)
+    history_data = stock.history(interval=i, period=str(p) + "d")
+
+    prices = history_data['Close']
+    volumes = history_data['Volume']
+
+    lower = prices.min()
+    upper = prices.max()
+
+    prices_ax = np.linspace(lower, upper, num=20)
+
+    vol_ax = np.zeros(20)
+
+    for i in range(0, len(volumes)):
+        if (prices[i] >= prices_ax[0] and prices[i] < prices_ax[1]):
+            vol_ax[0] += volumes[i]
+
+        elif (prices[i] >= prices_ax[1] and prices[i] < prices_ax[2]):
+            vol_ax[1] += volumes[i]
+
+        elif (prices[i] >= prices_ax[2] and prices[i] < prices_ax[3]):
+            vol_ax[2] += volumes[i]
+
+        elif (prices[i] >= prices_ax[3] and prices[i] < prices_ax[4]):
+            vol_ax[3] += volumes[i]
+
+        elif (prices[i] >= prices_ax[4] and prices[i] < prices_ax[5]):
+            vol_ax[4] += volumes[i]
+
+        elif (prices[i] >= prices_ax[5] and prices[i] < prices_ax[6]):
+            vol_ax[5] += volumes[i]
+
+        elif (prices[i] >= prices_ax[6] and prices[i] < prices_ax[7]):
+            vol_ax[6] += volumes[i]
+
+        elif (prices[i] >= prices_ax[7] and prices[i] < prices_ax[8]):
+            vol_ax[7] += volumes[i]
+
+        elif (prices[i] >= prices_ax[8] and prices[i] < prices_ax[9]):
+            vol_ax[8] += volumes[i]
+
+        elif (prices[i] >= prices_ax[9] and prices[i] < prices_ax[10]):
+            vol_ax[9] += volumes[i]
+
+        elif (prices[i] >= prices_ax[10] and prices[i] < prices_ax[11]):
+            vol_ax[10] += volumes[i]
+
+        elif (prices[i] >= prices_ax[11] and prices[i] < prices_ax[12]):
+            vol_ax[11] += volumes[i]
+
+        elif (prices[i] >= prices_ax[12] and prices[i] < prices_ax[13]):
+            vol_ax[12] += volumes[i]
+
+        elif (prices[i] >= prices_ax[13] and prices[i] < prices_ax[14]):
+            vol_ax[13] += volumes[i]
+
+        elif (prices[i] >= prices_ax[14] and prices[i] < prices_ax[15]):
+            vol_ax[14] += volumes[i]
+
+        elif (prices[i] >= prices_ax[15] and prices[i] < prices_ax[16]):
+            vol_ax[15] += volumes[i]
+
+        elif (prices[i] >= prices_ax[16] and prices[i] < prices_ax[17]):
+            vol_ax[16] += volumes[i]
+
+        elif (prices[i] >= prices_ax[17] and prices[i] < prices_ax[18]):
+            vol_ax[17] += volumes[i]
+
+        elif (prices[i] >= prices_ax[18] and prices[i] < prices_ax[19]):
+            vol_ax[18] += volumes[i]
+
         else:
-            value = earnings / discount_rate-growth_rate1
-            
-    else:
-        value = earnings
-        for i in range(1, growth_years + 1):
-            last_Earnings = last_Earnings * (1 + growth_rate1)
-            value = value + last_Earnings / (1 + discount_rate) ** i
-            
-        if total_years == 0 or total_years <= growth_years:
-            TV = last_Earnings * (1 + growth_rate1) / (discount_rate - growth_rate2)
-            value = value + TV / (1 + discount_rate) ** (growth_years + 1)
-            
-        else:
-            for i in range(growth_years + 1, total_years + 1):
-                last_Earnings = last_Earnings * (1 + growth_rate2)
-                value = value + last_Earnings / (1 + discount_rate) ** i
-    return value
+            vol_ax[19] += volumes[i]
 
-st.set_page_config(layout="wide")
+    fig = make_subplots(
+        rows=1, cols=2,
+        column_widths=[0.2, 0.8],
+        specs=[[{}, {}]],
+        horizontal_spacing=0.01
 
-companyDF = pd.read_csv(r'sample_data.csv')
-company_list = companyDF.drop_duplicates(subset='Ticker')
+    )
 
-company_list = company_list['Ticker'].values
+    fig.add_trace(
+        go.Bar(
+            x=vol_ax,
+            y=prices_ax,
+            text=np.around(prices_ax, 2),
+            textposition='auto',
+            orientation='h'
+        ),
 
-cols = st.columns(2)
-company_ticker = cols[0].selectbox('Ticker:',company_list)
-financialDF = companyDF[companyDF['Ticker'] == company_ticker]
+        row=1, col=1
+    )
 
-DCF_columns=["Ticker", "Year", "QTR", "Report Date", "Shares (Diluted)", "Revenue", "Pretax Income (Loss)", 'Net Income (Common)', 'Stock Price', 'Stock pct Increase',
-                         'Op. Invested Capital', 'Fin. Invested Capital', 'Invested Capital', 'Owner Earnings', 'Free Cash Flow',
-                         'Net Worth', 'Market Cap', 'PE', 'PB', 'PB (Tangible)', 'Faustmann Ratio', 'ROIC', 'Profit Margin',
-                         'ROA', 'ROE']
+    dateStr = history_data.index.strftime("%d-%m-%Y %H:%M:%S")
 
-financialDF = financialDF[DCF_columns]
-annualDF = pd.DataFrame()
-latest_columns = ["Ticker", "Year", "Report Date", "Shares (Diluted)", 'Stock Price', 'Net Worth', 'Market Cap']
-add_columns = ["Revenue", "Pretax Income (Loss)", 'Net Income (Common)', 'Owner Earnings', 'Free Cash Flow']
-average_columns = ['PE', 'PB', 'PB (Tangible)', 'Faustmann Ratio', 'ROIC', 'Profit Margin',
-                         'ROA', 'ROE']
+    fig.add_trace(
+        go.Candlestick(x=dateStr,
+                       open=history_data['Open'],
+                       high=history_data['High'],
+                       low=history_data['Low'],
+                       close=history_data['Close'],
+                       yaxis="y2"
+                       ),
+        row=1, col=2
+    )
 
-if len(financialDF) > 4:
-    temp = financialDF.drop_duplicates(subset='Year')
-    year_list = temp['Year']
-    
-    for year in year_list:
-        temp = financialDF[financialDF['Year']==year]
-        latestDF = temp[latest_columns]
-        latestDF = latestDF.iloc[-1:]
-        latestDF = latestDF.reset_index(drop=True)
-        addDF = temp[add_columns]
-        addDF = pd.DataFrame(addDF.sum(axis = 0) * 4 / len(temp))
-        addDF = addDF.T
-        averageDF = temp[average_columns]
-        averageDF = pd.DataFrame(averageDF.sum(axis = 0) / len(temp))
-        averageDF = averageDF.T
+    fig.update_layout(
+        title_text='Market Profile Chart (US S&P 500)',  # title of plot
+        bargap=0.01,  # gap between bars of adjacent location coordinates,
+        showlegend=False,
+        xaxis=dict(
+            showticklabels=False
+        ),
+        yaxis=dict(
+            showticklabels=False
+        ),
+        yaxis2=dict(
+            title="Price (USD)",
+            side="right"
+        )
+    )
 
-        if(annualDF.empty):
-            annualDF = pd.concat([latestDF, addDF, averageDF], axis = 1)
-        else:
-            annualDF = annualDF.append(pd.concat([latestDF, addDF, averageDF], axis=1), ignore_index = True)
-            
-EPS = annualDF["Owner Earnings"].values / annualDF["Shares (Diluted)"].values
-EPS_change = (EPS - np.roll(EPS, 1)) / np.roll(EPS, 1) * 100
-EPS_change[0] = 0
-EPSDF = pd.DataFrame(annualDF["Year"])
-EPSDF["EPS"] = pd.DataFrame(EPS)
-EPSDF["EPS %"] = pd.DataFrame(EPS_change)
-EPSDF['Sales per Share'] = pd.DataFrame(annualDF['Revenue'].values / annualDF["Shares (Diluted)"].values)
-annualDF["EPS"] = EPSDF["EPS"]
-annualDF["EPS %"] = EPSDF["EPS %"]
-annualDF['Sales per Share'] = EPSDF['Sales per Share']
-displayDF = EPSDF.sort_values(by = ['Year'], ascending = False)
+    fig.update_yaxes(nticks=20)
+    fig.update_yaxes(side="right")
+    fig.update_layout(height=800)
 
-cols[0].dataframe(data = displayDF, height = 175)
-LatestDF = EPSDF.iloc[-1:]
+    config = {
+        'modeBarButtonsToAdd': ['drawline']
+    }
 
-Earnings = cols[0].text_input("Year 1 Earnings", 0)
-Drate = cols[0].text_input("Disconut Rate", value=0.07)
-Growth1 = cols[0].text_input("Early Growth Rate", value=0.03)
-GrowthYears = cols[0].text_input("Years of Growth (0 assumes perpetual Early Growth Rate)", value=0)
-Growth2 = cols[0].text_input("Terminal Growth Rate", value=0.03)
-TotalYears =  cols[0].text_input("Years of Growth (0 assumes Terminal Value from Terminal Growth Rate)", value=0)
+    st.plotly_chart(fig, use_container_width=True, config=config)
 
-headings = annualDF.columns
-item1 = cols[1].selectbox('Plot1:', headings, index=21)
-item2 = cols[1].selectbox('Plot2:', headings, index=1)
 
-plot2DF = pd.DataFrame(annualDF[item1])
-plot2DF['Year'] = annualDF['Year'].values
 
-if item2 !='Year':
-    plot_series = [item1, item2]
-    plot2DF[item2] = annualDF[item2]
-else:
-    plot_series = [item1]
-fig2 = px.line(plot2DF, x = "Year", y = plot_series)
-cols[1].plotly_chart(fig2, use_container_width = True)
+#--------------------------------Section 3: DCF Valuation-----------------------------------------
+if screen == 'DCF Valuation':
 
-valuation = DCF(float(Earnings), float(Drate), float(Growth1), int(GrowthYears), float(Growth2), int(TotalYears))
-current_price = yf.Ticker(company_ticker).history(period='1d')
-current_price = current_price["Close"].values
-current_price = current_price[0]
-current_price_format = "{:.2f}".format(current_price)
-valuation_format = "{:.2f}".format(valuation)
-cols[1].subheader("Valuation: "+str(valuation_format)+ "\tCurrent Price: " +str(current_price_format))
+    #basic numbers straight out from FMP API.
+    print('Getting DCF valuation from FMP api.')
+    DCF = stock.get_DCF()
+    DCF = get_jsonparsed_data(DCF)
+    discountedCashFlow = DCF['dcf']
+    stockPrice = DCF['Stock Price']
 
-MS_format = (valuation / current_price - 1) * 100
-MS_format = "{:.2f}".format(MS_format)
-cols[1].subheader("Margin of Safety: " +str(MS_format) +"%")
+    st.subheader('DCF Value')
+    st.write(discountedCashFlow)
+    st.subheader('Stock Price')
+    st.write(stockPrice)
 
-if len(EPSDF) > 3:
-    eps = EPSDF['EPS'].values
-    eps3Growth = ((eps[len(eps) - 1] / eps[len(eps) - 4]) ** (1 / 3) - 1)
-else:
-    eps3Growth = 0
-    
-if len(EPSDF) > 5:
-    eps = EPSDF['EPS'].values
-    eps5Growth = ((eps[len(eps) - 1] / eps[len(eps) - 6]) ** (1 / 5) - 1)
-else:
-    eps5Growth = 0
+#-------------------------------Section 3: Relative Valuation-----------------------------------------
+if screen == 'Relative Valuations':
 
-LatestDF = annualDF.iloc[-1:]
-LatestDF["EPS 3Y Growth"] = eps3Growth
-LatestDF["EPS 5Y Growth"] = eps5Growth
-LatestDF = LatestDF[["EPS 3Y Growth", "EPS 5Y Growth", 'Faustmann Ratio', 'ROIC', 'ROE', 'PE', "PB"]]
-LatestDF = LatestDF.style.format({"EPS 3Y Growth":'{:.2%}'})
-LatestDF = LatestDF.format({"EPS 5Y Growth":'{:.2%}'})
-LatestDF = LatestDF.format({"Faustmann Ratio":'{:.2f}'})
-LatestDF = LatestDF.format({"ROIC":'{:.2%}'})
-LatestDF = LatestDF.format({"ROE":'{:.2%}'})
-LatestDF = LatestDF.format({"PE":'{:.2f}'})
-LatestDF = LatestDF.format({"PB":'{:.2f}'})
-cols[1].dataframe(data=LatestDF, height=100)
+    #basic numbers straight out from FMP api.
+    print('Getting fundamental ratios from FMP api.')
+    financialFundamentals = stock.get_fundamental_ratios()
+    financialFundamentals = get_jsonparsed_data(financialFundamentals)
+    #P/S, P/E, P/OCF, P/FCFE, P/B
+    mostRecent = financialFundamentals[0]
+
+    PS = mostRecent['priceToSalesRatio']
+    PS = round(PS, 1)
+    PE = mostRecent['priceEarningsRatio']
+    PE = round(PE, 1)
+    POCF = mostRecent['priceToOperatingCashFlowsRatio']
+    POCF = round(POCF, 1)
+    PFCFE = mostRecent['priceToFreeCashFlowsRatio']
+    PFCFE = round(PFCFE, 1)
+    PB = mostRecent['priceBookValueRatio']
+    PB = round(PB, 1)
+
+    st.header('Valuation Multiples')
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader(f'{PS}')
+        st.write('P/S')
+        st.subheader(f'{POCF}')
+        st.write('P/OCF')
+        st.subheader(f'{PB}')
+        st.write('P/B')
+
+    with col2:
+        st.subheader(f'{PE}')
+        st.write('P/E')
+        st.subheader(f'{PFCFE}')
+        st.write('P/FCFE')
+
+if screen == 'Profitability':
+    pass
+
+if screen == 'Solvency':
+    pass
